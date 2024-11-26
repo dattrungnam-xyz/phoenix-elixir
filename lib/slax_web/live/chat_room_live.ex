@@ -4,12 +4,26 @@ defmodule SlaxWeb.ChatRoomLive do
   alias Slax.Chat
   alias Slax.Chat.{Room, Message}
   alias Slax.Accounts.User
+  alias Slax.Accounts
+  alias SlaxWeb.OnlineUsers
 
   def mount(_params, _session, socket) do
     rooms = Chat.list_rooms()
     timezone = get_connect_params(socket)["timezone"]
+    users = Accounts.list_users()
 
-    {:ok, assign(socket, rooms: rooms, timezone: timezone)}
+    if connected?(socket) do
+      OnlineUsers.track(self(), socket.assigns.current_user)
+    end
+
+    OnlineUsers.subscribe()
+
+    socket =
+      socket
+      |> assign(rooms: rooms, timezone: timezone, users: users)
+      |> assign(online_users: OnlineUsers.list())
+
+    {:ok, socket}
   end
 
   def handle_params(params, _session, socket) do
@@ -24,6 +38,7 @@ defmodule SlaxWeb.ChatRoomLive do
           Chat.get_first_room!()
       end
 
+    users = Accounts.list_users()
     messages = Chat.get_list_of_messages(room)
     Chat.subscribe_to_room(room)
 
@@ -32,10 +47,12 @@ defmodule SlaxWeb.ChatRoomLive do
       |> assign(
         hideTopic?: false,
         page_title: "#" <> room.name,
-        room: room
+        room: room,
+        users: users
       )
       |> stream(:messages, messages, reset: true)
       |> assign_message_form(Chat.change_message(%Message{}))
+      |> push_event("scroll_messages_to_bottom", %{})
 
     {:noreply, newSocket}
   end
@@ -49,11 +66,22 @@ defmodule SlaxWeb.ChatRoomLive do
   end
 
   def handle_info({:new_message, message}, socket) do
-    {:noreply, stream_insert(socket, :messages, message)}
+    socket =
+      socket
+      |> stream_insert(:messages, message)
+      |> push_event("scroll_messages_to_bottom", %{})
+
+    {:noreply, socket}
   end
 
   def handle_info({:message_deleted, message}, socket) do
     {:noreply, stream_delete(socket, :messages, message)}
+  end
+
+  def handle_info(%{event: "presence_diff", payload: diff}, socket) do
+    online_users = OnlineUsers.update(socket.assigns.online_users, diff)
+
+    {:noreply, assign(socket, online_users: online_users)}
   end
 
   def render(assigns) do
@@ -72,6 +100,20 @@ defmodule SlaxWeb.ChatRoomLive do
         </div>
         <div id="rooms-list">
           <.room_link :for={room <- @rooms} room={room} active={room.id == @room.id} />
+        </div>
+        <div class="mt-4">
+          <div class="flex items-center h-8 px-3 group">
+            <div class="flex items-center flex-grow focus:outline-none">
+              <span class="ml-2 leading-none font-medium text-sm">Users</span>
+            </div>
+          </div>
+          <div id="users-list">
+            <.user
+              :for={user <- @users}
+              user={user}
+              online={OnlineUsers.online?(@online_users, user.id)}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -129,7 +171,12 @@ defmodule SlaxWeb.ChatRoomLive do
           <% end %>
         </ul>
       </div>
-      <div id="room-messages" class="flex flex-col flex-grow  overflow-auto" phx-update="stream">
+      <div
+        id="room-messages"
+        class="flex flex-col flex-grow overflow-auto"
+        phx-hook="RoomMessages"
+        phx-update="stream"
+      >
         <.message
           :for={{dom_id, message} <- @streams.messages}
           dom_id={dom_id}
@@ -152,6 +199,7 @@ defmodule SlaxWeb.ChatRoomLive do
             id="chat-message-textarea"
             name={@new_message_form[:body].name}
             placeholder={"Message ##{@room.name}"}
+            phx-hook="ChatMessageTextarea"
             phx-debounce
             rows="1"
           ><%= Phoenix.HTML.Form.normalize_value("textarea", @new_message_form[:body].value) %></textarea>
@@ -249,5 +297,23 @@ defmodule SlaxWeb.ChatRoomLive do
       end
 
     {:noreply, socket}
+  end
+
+  attr :user, User, required: true
+  attr :online, :boolean, default: false
+
+  defp user(assigns) do
+    ~H"""
+    <.link class="flex items-center h-8 hover:bg-gray-300 text-sm pl-8 pr-3" href="#">
+      <div class="flex justify-center w-4">
+        <%= if @online do %>
+          <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+        <% else %>
+          <span class="w-2 h-2 rounded-full border-2 border-gray-500"></span>
+        <% end %>
+      </div>
+      <span class="ml-2 leading-none"><%= username(@user) %></span>
+    </.link>
+    """
   end
 end
