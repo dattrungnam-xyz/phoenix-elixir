@@ -6,7 +6,6 @@ defmodule SlaxWeb.ChatRoomLive do
   alias Slax.Accounts.User
   alias Slax.Accounts
   alias SlaxWeb.OnlineUsers
-
   import SlaxWeb.RoomComponents
 
   def mount(_params, _session, socket) do
@@ -32,8 +31,7 @@ defmodule SlaxWeb.ChatRoomLive do
           :unread_marker -> "messages-unread-marker"
         end
       )
-
-    {:ok, socket}
+      |> ok()
   end
 
   defp assign_room_form(socket, changeset) do
@@ -83,8 +81,7 @@ defmodule SlaxWeb.ChatRoomLive do
           other -> other
         end)
       end)
-
-    {:noreply, newSocket}
+      |> noreply()
   end
 
   defp maybe_insert_unread_marker(messages, nil), do: messages

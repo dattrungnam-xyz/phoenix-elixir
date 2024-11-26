@@ -62,8 +62,7 @@ defmodule SlaxWeb.ChatRoomLive.Index do
       |> assign(:page_title, "All rooms")
       |> stream_configure(:rooms, dom_id: fn {room, _} -> "rooms-#{room.id}" end)
       |> stream(:rooms, rooms)
-
-    {:ok, socket}
+      |> ok()
   end
 
   def handle_event("toggle-room-membership", %{"id" => id}, socket) do
@@ -72,6 +71,8 @@ defmodule SlaxWeb.ChatRoomLive.Index do
       |> Chat.get_room!()
       |> Chat.toggle_room_membership(socket.assigns.current_user)
 
-    {:noreply, stream_insert(socket, :rooms, {room, joined?})}
+    socket
+    |> stream_insert(:rooms, {room, joined?})
+    |> noreply()
   end
 end
