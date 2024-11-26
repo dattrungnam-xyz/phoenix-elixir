@@ -8,7 +8,7 @@ defmodule SlaxWeb.ChatRoomLive do
   alias SlaxWeb.OnlineUsers
 
   def mount(_params, _session, socket) do
-    rooms = Chat.list_joined_rooms(socket.assigns.current_user)
+    rooms = Chat.list_joined_rooms_with_unread_counts(socket.assigns.current_user)
     timezone = get_connect_params(socket)["timezone"]
     users = Accounts.list_users()
 
@@ -17,6 +17,7 @@ defmodule SlaxWeb.ChatRoomLive do
     end
 
     OnlineUsers.subscribe()
+    Enum.each(rooms, fn {chat, _} -> Chat.subscribe_to_room(chat) end)
 
     socket =
       socket
@@ -33,8 +34,6 @@ defmodule SlaxWeb.ChatRoomLive do
   end
 
   def handle_params(params, _session, socket) do
-    if socket.assigns[:room], do: Chat.unsubscribe_from_room(socket.assigns.room)
-
     room =
       case Map.fetch(params, "id") do
         {:ok, id} ->
@@ -52,8 +51,6 @@ defmodule SlaxWeb.ChatRoomLive do
       |> Chat.list_messages_in_room()
       |> maybe_insert_unread_marker(last_read_id)
 
-    Chat.subscribe_to_room(room)
-
     Chat.update_last_read_id(room, socket.assigns.current_user)
 
     newSocket =
@@ -67,7 +64,18 @@ defmodule SlaxWeb.ChatRoomLive do
       )
       |> stream(:messages, messages, reset: true)
       |> assign_message_form(Chat.change_message(%Message{}))
-      |> push_event("scroll_messages_to_bottom", %{})
+      |> push_event(
+        "scroll_messages_to_bottom",
+        %{}
+      )
+      |> update(:rooms, fn rooms ->
+        room_id = room.id
+
+        Enum.map(rooms, fn
+          {%Room{id: ^room_id} = room, _} -> {room, 0}
+          other -> other
+        end)
+      end)
 
     {:noreply, newSocket}
   end
@@ -93,14 +101,28 @@ defmodule SlaxWeb.ChatRoomLive do
   end
 
   def handle_info({:new_message, message}, socket) do
-    if message.room_id == socket.assigns.room.id do
-      Chat.update_last_read_id(message.room, socket.assigns.current_user)
-    end
+    room = socket.assigns.room
 
     socket =
-      socket
-      |> stream_insert(:messages, message)
-      |> push_event("scroll_messages_to_bottom", %{})
+      cond do
+        message.room_id == room.id ->
+          Chat.update_last_read_id(room, socket.assigns.current_user)
+
+          socket
+          |> stream_insert(:messages, message)
+          |> push_event("scroll_messages_to_bottom", %{})
+
+        message.user_id != socket.assigns.current_user.id ->
+          update(socket, :rooms, fn rooms ->
+            Enum.map(rooms, fn
+              {%Room{id: id} = room, count} when id == message.room_id -> {room, count + 1}
+              other -> other
+            end)
+          end)
+
+        true ->
+          socket
+      end
 
     {:noreply, socket}
   end
@@ -115,6 +137,19 @@ defmodule SlaxWeb.ChatRoomLive do
     {:noreply, assign(socket, online_users: online_users)}
   end
 
+  attr :count, :integer, required: true
+
+  defp unread_message_counter(assigns) do
+    ~H"""
+    <span
+      :if={@count > 0}
+      class="flex items-center justify-center bg-blue-500 rounded-full font-medium h-5 px-2 ml-auto text-xs text-white"
+    >
+      <%= @count %>
+    </span>
+    """
+  end
+
   def render(assigns) do
     ~H"""
     <div class="flex flex-col flex-shrink-0 w-64 bg-slate-100">
@@ -127,15 +162,28 @@ defmodule SlaxWeb.ChatRoomLive do
       </div>
       <div class="mt-4 overflow-auto">
         <div class="flex items-center h-8 px-3 group">
-          <span class="ml-2 leading-none font-medium text-sm">Rooms</span>
+          <.toggler on_click={toggle_rooms()} dom_id="rooms-toggler" text="Rooms" />
         </div>
         <div id="rooms-list">
-          <.room_link :for={room <- @rooms} room={room} active={room.id == @room.id} />
+          <.room_link
+            :for={{room, unread_count} <- @rooms}
+            room={room}
+            active={room.id == @room.id}
+            unread_count={unread_count}
+          />
           <button class="group relative flex items-center h-8 text-sm pl-8 pr-3 hover:bg-slate-300 cursor-pointer w-full">
             <.icon name="hero-plus" class="h-4 w-4 relative top-px" />
             <span class="ml-2 leading-none">Add rooms</span>
             <div class="hidden group-focus:block cursor-default absolute top-8 right-2 bg-white border-slate-200 border py-3 rounded-lg">
               <div class="w-full text-left">
+              <div class="hover:bg-sky-600">
+                  <div
+                    class="cursor-pointer whitespace-nowrap text-gray-800 hover:text-white px-6 py-1 block"
+                    phx-click={show_modal("new-room-modal")}
+                  >
+                    Create a new room
+                  </div>
+                </div>
                 <div class="hover:bg-sky-600">
                   <div
                     phx-click={JS.navigate(~p"/rooms")}
@@ -151,7 +199,7 @@ defmodule SlaxWeb.ChatRoomLive do
         <div class="mt-4">
           <div class="flex items-center h-8 px-3 group">
             <div class="flex items-center flex-grow focus:outline-none">
-              <span class="ml-2 leading-none font-medium text-sm">Users</span>
+              <.toggler on_click={toggle_users()} dom_id="users-toggler" text="Users" />
             </div>
           </div>
           <div id="users-list">
@@ -298,6 +346,7 @@ defmodule SlaxWeb.ChatRoomLive do
 
   attr :active, :boolean, required: true
   attr :room, Room, required: true
+  attr :unread_count, :integer, required: true
 
   defp room_link(assigns) do
     ~H"""
@@ -312,7 +361,33 @@ defmodule SlaxWeb.ChatRoomLive do
       <span class={["ml-2 leading-none", @active && "font-bold"]}>
         <%= @room.name %>
       </span>
+      <.unread_message_counter count={@unread_count} />
     </.link>
+    <.modal id="new-room-modal">
+      <.header>New chat room</.header>
+      (Form goes here)
+    </.modal>
+    """
+  end
+
+  attr :dom_id, :string, required: true
+  attr :text, :string, required: true
+  attr :on_click, JS, required: true
+
+  defp toggler(assigns) do
+    ~H"""
+    <button id={@dom_id} phx-click={@on_click} class="flex items-center flex-grow focus:outline-none">
+      <.icon id={@dom_id <> "-chevron-down"} name="hero-chevron-down" class="h-4 w-4" />
+      <.icon
+        id={@dom_id <> "-chevron-right"}
+        name="hero-chevron-right"
+        class="h-4 w-4"
+        style="display:none;"
+      />
+      <span class="ml-2 leading-none font-medium text-sm">
+        <%= @text %>
+      </span>
+    </button>
     """
   end
 
@@ -363,7 +438,13 @@ defmodule SlaxWeb.ChatRoomLive do
     current_user = socket.assigns.current_user
     Chat.join_room!(socket.assigns.room, current_user)
     Chat.subscribe_to_room(socket.assigns.room)
-    socket = assign(socket, joined?: true, rooms: Chat.list_joined_rooms(current_user))
+
+    socket =
+      assign(socket,
+        joined?: true,
+        rooms: Chat.list_joined_rooms_with_unread_counts(current_user)
+      )
+
     {:noreply, socket}
   end
 
@@ -413,5 +494,17 @@ defmodule SlaxWeb.ChatRoomLive do
       <span class="ml-2 leading-none"><%= username(@user) %></span>
     </.link>
     """
+  end
+
+  defp toggle_rooms() do
+    JS.toggle(to: "#rooms-toggler-chevron-down")
+    |> JS.toggle(to: "#rooms-toggler-chevron-right")
+    |> JS.toggle(to: "#rooms-list")
+  end
+
+  defp toggle_users() do
+    JS.toggle(to: "#users-toggler-chevron-down")
+    |> JS.toggle(to: "#users-toggler-chevron-right")
+    |> JS.toggle(to: "#users-list")
   end
 end
