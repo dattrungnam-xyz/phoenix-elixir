@@ -7,7 +7,6 @@ defmodule Slax.Accounts do
   alias Slax.Repo
 
   alias Slax.Accounts.{User, UserToken, UserNotifier}
-
   ## Database getters
 
   @doc """

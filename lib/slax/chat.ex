@@ -1,7 +1,7 @@
 defmodule Slax.Chat do
   alias Slax.Repo
   alias Slax.Accounts.User
-  alias Slax.Chat.{Room, Message}
+  alias Slax.Chat.{Message, Room, RoomMembership}
   import Ecto.Query
 
   @pubsub Slax.PubSub
@@ -72,5 +72,31 @@ defmodule Slax.Chat do
     Repo.delete(message)
 
     Phoenix.PubSub.broadcast!(@pubsub, topic(message.room_id), {:message_deleted, message})
+  end
+  def join_room!(room, user) do
+    Repo.insert!(%RoomMembership{room: room, user: user})
+  end
+
+  def list_joined_rooms(%User{} = user) do
+    user
+    |> Repo.preload(:rooms)
+    |> Map.fetch!(:rooms)
+    |> Enum.sort_by(& &1.name)
+  end
+  def joined?(%Room{} = room, %User{} = user) do
+    Repo.exists?(
+      from rm in RoomMembership, where: rm.room_id == ^room.id and rm.user_id == ^user.id
+    )
+  end
+
+  def list_rooms_with_joined(%User{} = user) do
+    query =
+      from r in Room,
+        left_join: m in RoomMembership,
+        on: r.id == m.room_id and m.user_id == ^user.id,
+        select: {r, not is_nil(m.id)},
+        order_by: [asc: :name]
+
+    Repo.all(query)
   end
 end

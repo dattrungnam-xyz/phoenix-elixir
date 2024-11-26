@@ -33,9 +33,17 @@ defmodule SlaxWeb.ChatRoomLive.Edit do
     changeset = Chat.change_room(room)
 
     socket =
-      socket
-      |> assign(page_title: "Edit chat room", room: room)
-      |> assign_form(changeset)
+      if Chat.joined?(room, socket.assigns.current_user) do
+        changeset = Chat.change_room(room)
+
+        socket
+        |> assign(page_title: "Edit chat room", room: room)
+        |> assign_form(changeset)
+      else
+        socket
+        |> put_flash(:error, "Permission denied")
+        |> push_navigate(to: ~p"/")
+      end
 
     {:ok, socket}
   end
