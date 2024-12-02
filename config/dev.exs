@@ -2,8 +2,8 @@ import Config
 
 # Configure your database
 config :slax, Slax.Repo,
-  username: "datnguyen",
-  password: "123456",
+  username: "ytbapi",
+  password: "example",
   hostname: "localhost",
   database: "phoenix",
   stacktrace: true,

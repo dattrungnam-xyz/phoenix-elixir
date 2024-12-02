@@ -115,6 +115,14 @@ defmodule Slax.Accounts do
     User.email_changeset(user, attrs, validate_email: false)
   end
 
+  def change_email(user, attrs \\ %{}) do
+    User.email_changeset_valid(user, attrs, validate_email: true)
+  end
+
+  def change_user_login(user, attrs \\ %{}) do
+    User.email_changeset_valid(user, attrs, validate_email: true)
+  end
+
   @doc """
   Emulates that the email will change without actually changing
   it in the database.

@@ -48,8 +48,13 @@ defmodule SlaxWeb.Router do
       on_mount: [{SlaxWeb.UserAuth, :redirect_if_user_is_authenticated}] do
       live "/users/register", UserRegistrationLive, :new
       live "/users/log_in", UserLoginLive, :new
+      live "/login", LoginLive
+      live "/login/code", LoginLive, :code
+      live "/loginpw", LoginPasswordLive
       live "/users/reset_password", UserForgotPasswordLive, :new
       live "/users/reset_password/:token", UserResetPasswordLive, :edit
+
+      live "/datepicker", DatesDatePickerLive
     end
 
     post "/users/log_in", UserSessionController, :create

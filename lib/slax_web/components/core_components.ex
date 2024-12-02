@@ -18,6 +18,8 @@ defmodule SlaxWeb.CoreComponents do
 
   alias Phoenix.LiveView.JS
   import SlaxWeb.Gettext
+  import SlaxWeb.Typography
+  import Phoenix.VerifiedRoutes
 
   @doc """
   Renders a modal.
@@ -201,10 +203,10 @@ defmodule SlaxWeb.CoreComponents do
 
   def simple_form(assigns) do
     ~H"""
-    <.form :let={f} for={@for} as={@as} {@rest}>
-      <div class="mt-10 space-y-8 bg-white">
+    <.form :let={f} class="w-full" for={@for} as={@as} {@rest}>
+      <div class="block w-full bg-white">
         <%= render_slot(@inner_block, f) %>
-        <div :for={action <- @actions} class="mt-2 flex items-center justify-between gap-6">
+        <div :for={action <- @actions} class="mt-5 flex items-center justify-between gap-6">
           <%= render_slot(action, f) %>
         </div>
       </div>
@@ -231,8 +233,8 @@ defmodule SlaxWeb.CoreComponents do
     <button
       type={@type}
       class={[
-        "phx-submit-loading:opacity-75 rounded-lg bg-zinc-900 hover:bg-zinc-700 py-2 px-3",
-        "text-sm font-semibold leading-6 text-white active:text-white/80",
+        "phx-submit-loading:opacity-75 rounded-lg bg-blue-900 hover:bg-blue-700 py-2 px-3",
+        "text-sm font-semibold leading-6 text-white active:text-white/80 text-white w-full",
         @class
       ]}
       {@rest}
@@ -281,6 +283,7 @@ defmodule SlaxWeb.CoreComponents do
   attr :field, Phoenix.HTML.FormField,
     doc: "a form field struct retrieved from the form, for example: @form[:email]"
 
+  attr :required, :boolean, default: false
   attr :errors, :list, default: []
   attr :checked, :boolean, doc: "the checked flag for checkbox inputs"
   attr :prompt, :string, default: nil, doc: "the prompt for select inputs"
@@ -289,7 +292,10 @@ defmodule SlaxWeb.CoreComponents do
 
   attr :rest, :global,
     include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
-                multiple pattern placeholder readonly required rows size step)
+                multiple pattern placeholder readonly rows size step)
+
+  slot :icon
+  slot :suffix
 
   def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
     errors = if Phoenix.Component.used_input?(field), do: field.errors, else: []
@@ -370,19 +376,29 @@ defmodule SlaxWeb.CoreComponents do
   def input(assigns) do
     ~H"""
     <div>
-      <.label for={@id}><%= @label %></.label>
-      <input
-        type={@type}
-        name={@name}
-        id={@id}
-        value={Phoenix.HTML.Form.normalize_value(@type, @value)}
-        class={[
-          "mt-2 block w-full rounded-lg text-zinc-900 focus:ring-0 sm:text-sm sm:leading-6",
-          @errors == [] && "border-zinc-300 focus:border-zinc-400",
-          @errors != [] && "border-rose-400 focus:border-rose-400"
-        ]}
-        {@rest}
-      />
+      <.label required={assigns[:required]} for={@id}><%= @label %></.label>
+      <div class={
+        "mt-1 focus-within:border-[#004567] input-container flex justify-between items-center w-full border border-[#E5E7E8]
+       rounded py-2 px-[10px] gap-[6px] h-[36px] min-h-[36px] shadow-custom" <>
+          if(Enum.empty?(@errors), do: " border-[#D1D5DB]", else: " border-[#DC2626]") <>
+        if Map.get(assigns[:rest], :disabled), do: " border-[#E5E7EB] bg-[#F3F4F6]", else: " hover:border-[#005681] bg-[white]"
+      }>
+        <div :if={@icon} class="icon">
+          <%= render_slot(@icon) %>
+        </div>
+        <input
+          type={@type}
+          name={@name}
+          id={@id}
+          value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+          {@rest}
+          autocomplete="off"
+          class="text-sm border-none relative text-[#374151] focus:border-none focus:border-none  font-normal min-h-[16px] p-0 bg-transparent flex-1 w-full"
+        />
+        <div :if={@suffix} class="suffix">
+          <%= render_slot(@suffix) %>
+        </div>
+      </div>
       <.error :for={msg <- @errors}><%= msg %></.error>
     </div>
     """
@@ -392,12 +408,17 @@ defmodule SlaxWeb.CoreComponents do
   Renders a label.
   """
   attr :for, :string, default: nil
+  attr :required, :boolean, default: false
+  attr :variant, :string, default: "c1-highlight"
   slot :inner_block, required: true
 
   def label(assigns) do
     ~H"""
-    <label for={@for} class="block text-sm font-semibold leading-6 text-zinc-800">
-      <%= render_slot(@inner_block) %>
+    <label class="flex flex-row gap-1 items-center " for={@for}>
+      <.typography class="container-label" variant="c1-highlight">
+        <%= render_slot(@inner_block) %>
+      </.typography>
+      <.typography :if={@required} variant="c1-highlight" class="text-rose-500">*</.typography>
     </label>
     """
   end
@@ -409,8 +430,7 @@ defmodule SlaxWeb.CoreComponents do
 
   def error(assigns) do
     ~H"""
-    <p class="mt-3 flex gap-3 text-sm leading-6 text-rose-600">
-      <.icon name="hero-exclamation-circle-mini" class="mt-0.5 h-5 w-5 flex-none" />
+    <p class="mt-1 flex gap-3 text-xs leading-6 text-rose-600">
       <%= render_slot(@inner_block) %>
     </p>
     """
@@ -588,14 +608,15 @@ defmodule SlaxWeb.CoreComponents do
       <.icon name="hero-x-mark-solid" />
       <.icon name="hero-arrow-path" class="ml-1 w-3 h-3 animate-spin" />
   """
-  attr :name, :string, required: true
+  attr :name, :string, default: ""
   attr :class, :string, default: nil
   attr :id, :string, default: nil
   attr :style, :string, default: nil
+  attr :color, :string, default: nil
 
-  def icon(%{name: "hero-" <> _} = assigns) do
+  def icon(assigns) do
     ~H"""
-    <span class={[@name, @class]} id={@id} style={@style} />
+    <img class={@class} style={@style} src={"/icons/#{@name}.svg"} />
     """
   end
 

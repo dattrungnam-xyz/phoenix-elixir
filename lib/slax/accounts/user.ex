@@ -15,6 +15,16 @@ defmodule Slax.Accounts.User do
     timestamps(type: :utc_datetime)
   end
 
+  @doc false
+  def changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email])
+    # Kiểm tra email có được nhập không
+    |> validate_required([:email])
+    # Kiểm tra định dạng email
+    |> validate_format(:email, ~r/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)
+  end
+
   @doc """
   A user changeset for registration.
 
@@ -66,7 +76,7 @@ defmodule Slax.Accounts.User do
     end
   end
 
-  defp validate_email(changeset, opts) do
+  def validate_email(changeset, opts) do
     changeset
     |> validate_required([:email])
     |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must have the @ sign and no spaces")
@@ -125,6 +135,13 @@ defmodule Slax.Accounts.User do
       %{changes: %{email: _}} = changeset -> changeset
       %{} = changeset -> add_error(changeset, :email, "did not change")
     end
+  end
+
+  def email_changeset_valid(user, attrs, opts \\ []) do
+    user
+    |> cast(attrs, [:email, :password])
+    |> validate_required([:email, :password])
+    |> validate_email(opts)
   end
 
   @doc """
