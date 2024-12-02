@@ -23,9 +23,12 @@ import { LiveSocket } from "phoenix_live_view";
 import topbar from "../vendor/topbar";
 import RoomMessages from "./hooks/RoomMessages";
 import ChatMessageTextarea from "./hooks/ChatMessageTextarea";
+import DatePicker from "./hooks/DatePicker";
 
 const hooks = {
   RoomMessages,
+  DatePicker,
+  ChatMessageTextarea,
 };
 let csrfToken = document
   .querySelector("meta[name='csrf-token']")
@@ -33,7 +36,7 @@ let csrfToken = document
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   hooks,
-  ChatMessageTextarea,
+
   params: {
     _csrf_token: csrfToken,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

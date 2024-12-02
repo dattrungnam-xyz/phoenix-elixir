@@ -13,7 +13,9 @@ defmodule SlaxWeb.DatesDatePickerLive do
         helpertext="aaaa"
         name="date"
         value="22"
+        label="aaaa"
         id="iii"
+        disabled="true"
       />
     </div>
     """

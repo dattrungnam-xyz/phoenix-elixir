@@ -6,23 +6,28 @@ defmodule SlaxWeb.DatesDatePickerLiveComponent do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class={"w-full flex flex-col " <> @class}>
+    <div phx-hook="DatePicker" id="date-picker" class={"w-full flex flex-col " <> @class}>
       <div class="w-full relative">
+        <%!-- clearable={@clearable} --%>
+
         <.input
           name={@name}
           label={@label}
-          value={@select_date}
-          clearable={@clearable}
+          value={convert_to_date_format(@select_date, @format)}
           errors={@errors}
           disabled={@disabled}
           placeholder={@placeholder}
+          phx-target={@myself}
+          phx-keyup="input-date"
+          phx-blur="check-date"
+          id="input"
         >
           <:icon>
             <.icon name="date" class="w-4 h-4" />
           </:icon>
         </.input>
 
-        <div class="absolute w-full top-full left-0 bg-white p-3.5 h-auto z-10 border border-neutral-200 rounded-lg overflow-hidden shadow-md ">
+        <div class={"absolute w-full top-full left-0 bg-white p-3.5 h-auto z-10 border border-neutral-200 rounded-lg overflow-hidden shadow-md " <> if @show_picker, do: "block", else: "hidden"}>
           <div class="flex items-center justify-between">
             <div
               class="pointer p-[10px] flex"
@@ -160,6 +165,38 @@ defmodule SlaxWeb.DatesDatePickerLiveComponent do
   end
 
   @impl true
+  def handle_event("input-date", params, socket) do
+    format = socket.assigns.format
+
+    socket =
+      if validDate?(params["value"], format) do
+        select_date = get_date_from_input(params["value"], format)
+        {:ok, display_date} = Date.new(select_date.year, select_date.month, 1)
+        assign(socket, :select_date, select_date) |> assign(:display_date, display_date)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("check-date", params, socket) do
+    format = socket.assigns.format
+
+    socket =
+      if validDate?(params["value"], format) do
+        select_date = get_date_from_input(params["value"], format)
+        {:ok, display_date} = Date.new(select_date.year, select_date.month, 1)
+        assign(socket, :select_date, select_date) |> assign(:display_date, display_date)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("select_date", %{"day" => day}, socket) do
     current_display_date = socket.assigns.display_date
 
@@ -174,21 +211,43 @@ defmodule SlaxWeb.DatesDatePickerLiveComponent do
   end
 
   @impl true
+  def handle_event("open_datepicker", _params, socket) do
+    socket =
+      if socket.assigns.disabled do
+        socket
+      else
+        assign(socket, :show_picker, true)
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("close_datepicker", _params, socket) do
+    socket = assign(socket, :show_picker, false)
+    {:noreply, socket}
+  end
+
+  @impl true
   def update(assigns, socket) do
     # {:ok, date} = Date.new(2024, 1, 1)
     socket =
       socket
-      |> assign_new(:class, fn -> "" end)
-      |> assign_new(:name, fn -> nil end)
-      |> assign_new(:label, fn -> nil end)
-      |> assign_new(:clearable, fn -> false end)
-      |> assign_new(:errors, fn -> [] end)
-      |> assign_new(:helpertext, fn -> nil end)
-      |> assign_new(:disabled, fn -> false end)
-      |> assign_new(:placeholder, fn -> nil end)
-      |> assign(:select_date, Date.utc_today())
-      |> assign(:display_date, Date.utc_today())
-      |> assign(:day_names, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+      |> assign_new(:class, fn -> Map.get(assigns, :class, "") end)
+      |> assign_new(:name, fn -> Map.get(assigns, :name, nil) end)
+      |> assign_new(:label, fn -> Map.get(assigns, :label, nil) end)
+      |> assign_new(:clearable, fn -> Map.get(assigns, :clearable, false) end)
+      |> assign_new(:errors, fn -> Map.get(assigns, :errors, []) end)
+      |> assign_new(:helpertext, fn -> Map.get(assigns, :helpertext, nil) end)
+      |> assign_new(:disabled, fn -> Map.get(assigns, :disabled, false) end)
+      |> assign_new(:placeholder, fn -> Map.get(assigns, :placeholder, nil) end)
+      |> assign_new(:format, fn -> Map.get(assigns, :format, "mm/dd/yyyy") end)
+      |> assign_new(:select_date, fn -> Map.get(assigns, :select_date, Date.utc_today()) end)
+      |> assign_new(:display_date, fn -> Map.get(assigns, :display_date, Date.utc_today()) end)
+      |> assign_new(:day_names, fn ->
+        Map.get(assigns, :day_names, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+      end)
+      |> assign_new(:show_picker, fn -> Map.get(assigns, :show_picker, false) end)
 
     {:ok, socket}
   end
@@ -216,15 +275,15 @@ defmodule SlaxWeb.DatesDatePickerLiveComponent do
 
     {:ok, first_day} = Date.new(year, month, 1)
     last_day = Date.end_of_month(date)
-    {:ok, current_day} = Date.new(year, month, 1)
-    day_of_week = Date.day_of_week(current_day)
+    # {:ok, current_day} = Date.new(year, month, 1)
+    # day_of_week = Date.day_of_week(current_day)
 
-    current_day_adjusted =
-      if day_of_week != 1 do
-        Date.add(current_day, 8 - day_of_week)
-      else
-        current_day
-      end
+    # current_day_adjusted =
+    #   if day_of_week != 1 do
+    #     Date.add(current_day, 8 - day_of_week)
+    #   else
+    #     current_day
+    #   end
 
     list_week = []
     week_number = get_week_of_year(first_day)
@@ -289,5 +348,60 @@ defmodule SlaxWeb.DatesDatePickerLiveComponent do
       end)
 
     date_list
+  end
+
+  def convert_to_date_format(date, format) do
+    mm = date.month
+    dd = date.day
+    yyyy = date.year
+
+    case format do
+      "mm/dd/yyyy" -> "#{pad(mm)}.#{pad(dd)}.#{yyyy}"
+      "dd/mm/yyyy" -> "#{pad(dd)}.#{pad(mm)}.#{yyyy}"
+      _ -> "#{pad(mm)}.#{pad(dd)}.#{yyyy}"
+    end
+  end
+
+  defp pad(value) when value < 10 do
+    "0#{value}"
+  end
+
+  defp pad(value) do
+    "#{value}"
+  end
+
+  def validDate?(dateStr, format) do
+    date_parts = String.split(dateStr, ".")
+    parts = String.split(format, "/")
+    date_map = Enum.zip(parts, date_parts) |> Enum.into(%{})
+
+    with {:ok, day} <- Map.fetch(date_map, "dd"),
+         {:ok, month} <- Map.fetch(date_map, "mm"),
+         {:ok, year} <- Map.fetch(date_map, "yyyy"),
+         true <- year != "",
+         true <- String.match?(day, ~r/^\d+$/),
+         true <- String.match?(month, ~r/^\d+$/),
+         true <- String.match?(year, ~r/^\d+$/),
+         {:ok, _date} <-
+           Date.new(String.to_integer(year), String.to_integer(month), String.to_integer(day)) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  def get_date_from_input(dateStr, format) do
+    date_parts = String.split(dateStr, ".")
+    parts = String.split(format, "/")
+    date_map = Enum.zip(parts, date_parts) |> Enum.into(%{})
+
+    {:ok, day} = Map.fetch(date_map, "dd")
+    {:ok, month} = Map.fetch(date_map, "mm")
+    {:ok, year} = Map.fetch(date_map, "yyyy")
+
+    {:ok, date} =
+      Date.new(String.to_integer(year), String.to_integer(month), String.to_integer(day))
+
+    date
   end
 end
