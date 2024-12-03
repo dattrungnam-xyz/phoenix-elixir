@@ -1,13 +1,15 @@
 const DatePicker = {
   mounted() {
-    let inputElement = this.el.querySelector("input");
+    let inputElement = this.el.querySelectorAll("input");
 
-    inputElement.addEventListener("focus", () => {
-      if (!this.isOpen) {
-        this.isOpen = true;
-        this.pushEventTo("#date-picker", "open_datepicker", {});
-      }
-    });
+    inputElement.forEach((input) =>
+      input.addEventListener("focus", () => {
+        if (!this.isOpen) {
+          this.isOpen = true;
+          this.pushEventTo("#date-picker", "open_datepicker", {});
+        }
+      })
+    );
     this.el.addEventListener("click", () => {
       if (!this.isOpen) {
         this.isOpen = true;

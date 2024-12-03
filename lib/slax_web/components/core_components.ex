@@ -274,11 +274,12 @@ defmodule SlaxWeb.CoreComponents do
   attr :name, :any
   attr :label, :string, default: nil
   attr :value, :any
+  attr :class, :string, default: ""
 
   attr :type, :string,
     default: "text",
     values: ~w(checkbox color date datetime-local email file month number password
-               range search select tel text textarea time url week)
+               range search select tel text textarea time url week double)
 
   attr :field, Phoenix.HTML.FormField,
     doc: "a form field struct retrieved from the form, for example: @form[:email]"
@@ -368,6 +369,28 @@ defmodule SlaxWeb.CoreComponents do
         {@rest}
       ><%= Phoenix.HTML.Form.normalize_value("textarea", @value) %></textarea>
       <.error :for={msg <- @errors}><%= msg %></.error>
+    </div>
+    """
+  end
+
+  def input(%{type: "double"} = assigns) do
+    ~H"""
+    <div class="flex justify-between items-center w-full py-2 px-[10px] gap-[6px] h-[36px] min-h-[36px]">
+      <div :if={@icon} class="icon">
+        <%= render_slot(@icon) %>
+      </div>
+      <input
+        type={@type}
+        name={@name}
+        id={@id}
+        value={Phoenix.HTML.Form.normalize_value(@type, @value)}
+        {@rest}
+        autocomplete="off"
+        class={"text-sm outline-none relative text-[#374151] focus:border-none focus:border-none  font-normal min-h-[16px] p-0 bg-transparent flex-1 w-full " <> @class}
+      />
+      <div :if={@suffix} class="suffix">
+        <%= render_slot(@suffix) %>
+      </div>
     </div>
     """
   end

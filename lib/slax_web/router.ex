@@ -55,6 +55,7 @@ defmodule SlaxWeb.Router do
       live "/users/reset_password/:token", UserResetPasswordLive, :edit
 
       live "/datepicker", DatesDatePickerLive
+      live "/daterangepicker", DatesDateRangePickerLive
     end
 
     post "/users/log_in", UserSessionController, :create
