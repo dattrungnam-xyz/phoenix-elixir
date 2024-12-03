@@ -53,7 +53,7 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
         </div>
         <div class={if @show_picker, do: "block", else: "hidden"}>
           <div class="calendar calendar-months absolute top-full left-0 z-10 bg-[white] px-4 py-3 h-auto border border-[#E5E7EB] round-md overflow-hidden select-none shadow-boxShadow gap-3 flex w-auto">
-            <%= for date <- [@display_date, @middle_display_date, @last_display_date] do %>
+            <%= for date <- [@display_date, Map.get(assigns, :middle_display_date, nil), Map.get(assigns, :last_display_date, nil)] do %>
               <%= render_month_week(assigns, date) %>
             <% end %>
           </div>
@@ -72,15 +72,15 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
     display_date = Map.get(assigns, :display_date, Date.utc_today())
 
-    middle_display_date =
-      display_date
-      |> Date.add(Date.days_in_month(display_date))
-      |> Date.beginning_of_month()
+    # middle_display_date =
+    #   display_date
+    #   |> Date.add(Date.days_in_month(display_date))
+    #   |> Date.beginning_of_month()
 
-    last_display_date =
-      middle_display_date
-      |> Date.add(Date.days_in_month(middle_display_date))
-      |> Date.beginning_of_month()
+    # last_display_date =
+    #   middle_display_date
+    #   |> Date.add(Date.days_in_month(middle_display_date))
+    #   |> Date.beginning_of_month()
 
     socket =
       socket
@@ -100,14 +100,14 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
       |> assign_new(:format, fn -> Map.get(assigns, :format, "mm/dd/yyyy") end)
       |> assign_new(:start_date, fn -> Map.get(assigns, :start_date, nil) end)
       |> assign_new(:end_date, fn -> Map.get(assigns, :end_date, nil) end)
+      |> assign_new(:month_count, fn -> Map.get(assigns, :month_count, 1) end)
       |> assign_new(:display_date, fn -> display_date end)
       |> assign_new(:day_names, fn ->
         Map.get(assigns, :day_names, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
       end)
       |> assign_new(:show_picker, fn -> Map.get(assigns, :show_picker, false) end)
-      |> assign(:middle_display_date, middle_display_date)
       |> assign(:today, Date.utc_today())
-      |> assign(:last_display_date, last_display_date)
+      |> handle_update_month(display_date)
       |> assign(:pre_set, "end")
 
     # |> assign(:start_date, middle_display_date)
@@ -195,8 +195,6 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
     start_date = socket.assigns.start_date
     end_date = socket.assigns.end_date
-    IO.inspect(start_date)
-    IO.inspect(end_date)
 
     socket =
       if start_date != nil && end_date != nil && Date.compare(start_date, end_date) == :gt do
@@ -211,14 +209,10 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
   @impl true
   def handle_event("open_datepicker", _params, socket) do
-    IO.puts("show picker")
-
     socket =
       if socket.assigns.disabled do
-        IO.inspect("a")
         socket
       else
-        IO.inspect("b")
         assign(socket, :show_picker, true)
       end
 
@@ -227,7 +221,6 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
   @impl true
   def handle_event("close_datepicker", _params, socket) do
-    IO.puts("close_datepicker")
     socket = assign(socket, :show_picker, false)
     {:noreply, socket}
   end
@@ -235,7 +228,6 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
   @impl true
   def handle_event("input-date", params, socket) do
     format = socket.assigns.format
-    IO.inspect(params)
 
     socket =
       if validDate?(params["value"], format) do
@@ -243,8 +235,6 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
         cond do
           params["name"] == "start-date" and socket.assigns.end_date == nil ->
-            IO.inspect(input_date)
-
             assign(socket, :start_date, input_date)
             |> assign(:display_date, input_date)
             |> handle_update_month(input_date)
@@ -252,15 +242,14 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
           params["name"] == "start-date" and
               Date.compare(input_date, socket.assigns.end_date) != :gt ->
-            IO.inspect(input_date)
-
             assign(socket, :start_date, input_date)
             |> assign(:display_date, input_date)
             |> handle_update_month(input_date)
             |> assign(:pre_set, "start")
 
           params["name"] == "end-date" and socket.assigns.start_date == nil ->
-            new_display_date = first_day_of_previous_two_months(input_date)
+            new_display_date =
+              first_day_of_previous_months(input_date, socket.assigns.month_count)
 
             assign(socket, :end_date, input_date)
             |> assign(:display_date, new_display_date)
@@ -269,7 +258,8 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
 
           params["name"] == "end-date" and
               Date.compare(socket.assigns.start_date, input_date) != :gt ->
-            new_display_date = first_day_of_previous_two_months(input_date)
+            new_display_date =
+              first_day_of_previous_months(input_date, socket.assigns.month_count)
 
             assign(socket, :end_date, input_date)
             |> assign(:display_date, new_display_date)
@@ -283,22 +273,20 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
         socket
       end
 
-    IO.inspect(socket.assigns.display_date)
-
     # {:ok, display_date} = Date.new(select_date.year, select_date.month, 1)
     # assign(socket, :select_date, select_date) |> assign(:display_date, display_date)
 
     {:noreply, socket}
   end
 
-  def first_day_of_previous_two_months(date) do
+  def first_day_of_previous_months(date, month_count) do
     {year, month, _day} = Date.to_erl(date)
 
     {previous_month, previous_year} =
-      if month <= 2 do
-        {12 + (month - 2), year - 1}
+      if month <= month_count - 1 do
+        {12 + (month - month_count + 1), year - 1}
       else
-        {month - 2, year}
+        {month - month_count + 1, year}
       end
 
     {:ok, new_date} = Date.new(previous_year, previous_month, 1)
@@ -316,9 +304,31 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
       |> Date.add(Date.days_in_month(middle_display_date))
       |> Date.beginning_of_month()
 
+    month_count = socket.assigns.month_count
+    IO.inspect(String.to_integer(socket.assigns.month_count))
+
+    socket =
+      case String.to_integer(socket.assigns.month_count) do
+        1 ->
+          socket
+          |> assign(:middle_display_date, nil)
+          |> assign(:last_display_date, nil)
+
+        2 ->
+          socket
+          |> assign(:middle_display_date, middle_display_date)
+          |> assign(:last_display_date, nil)
+
+        3 ->
+          socket
+          |> assign(:middle_display_date, middle_display_date)
+          |> assign(:last_display_date, last_display_date)
+
+        _ ->
+          socket
+      end
+
     socket
-    |> assign(:middle_display_date, middle_display_date)
-    |> assign(:last_display_date, last_display_date)
   end
 
   defp month_to_string(month) do
@@ -462,108 +472,112 @@ defmodule SlaxWeb.DatesDateRangePickerLiveComponent do
   end
 
   defp render_month_week(assigns, date) do
-    ~H"""
-    <div class="min-w-[300px]">
-      <div class="top-bar flex items-center justify-between min-h-[34px]">
-        <div
-          phx-target={@myself}
-          phx-click="navigate_month"
-          phx-value-direction="prev"
-          class="buttons flex items-center"
-        >
-          <div class="change-button flex p-[10px] pointer">
-            <.icon name="chevron-left" class="w-[14px] h-[14px]" />
+    if date == nil do
+      ""
+    else
+      ~H"""
+      <div class="min-w-[300px]">
+        <div class="top-bar flex items-center justify-between min-h-[34px]">
+          <div
+            phx-target={@myself}
+            phx-click="navigate_month"
+            phx-value-direction="prev"
+            class="buttons flex items-center"
+          >
+            <div class="change-button flex p-[10px] pointer">
+              <.icon name="chevron-left" class="w-[14px] h-[14px]" />
+            </div>
+          </div>
+          <.typography
+            variant="b1-highlight"
+            class="monthYear text-[#4B5563] p-1 flex-1 text-center leading-1"
+          >
+            <%= month_to_string(date.month) %> <%= date.year %>
+          </.typography>
+          <div
+            phx-target={@myself}
+            phx-click="navigate_month"
+            phx-value-direction="next"
+            class="buttons flex items-center"
+          >
+            <div class="change-button flex p-[10px] pointer">
+              <.icon name="chevron-right" class="w-[14px] h-[14px]" />
+            </div>
           </div>
         </div>
-        <.typography
-          variant="b1-highlight"
-          class="monthYear text-[#4B5563] p-1 flex-1 text-center leading-1"
-        >
-          <%= month_to_string(date.month) %> <%= date.year %>
-        </.typography>
-        <div
-          phx-target={@myself}
-          phx-click="navigate_month"
-          phx-value-direction="next"
-          class="buttons flex items-center"
-        >
-          <div class="change-button flex p-[10px] pointer">
-            <.icon name="chevron-right" class="w-[14px] h-[14px]" />
-          </div>
-        </div>
-      </div>
-      <div class="flex overflow-hidden rounded justify-between">
-        <div class="weeks">
-          <div class="week grid w-10 grid-cols-1 text-[#9CA3AF] bg-[#F9FAFB] border-r border-[#D1D5DB] h-[36px] min-h-[36px]">
-            <.typography
-              variant="c1"
-              class="text-[#9CA3AF] py-[10px] items-center text-center justify-center block select-none"
-            >
-              week
-            </.typography>
-          </div>
-          <div class="week grid w-10 grid-cols-1 text-[#9CA3AF] bg-[#F9FAFB] border-r border-[#D1D5DB]">
-            <%= for week <- get_weeks_in_month(date) do %>
-              <%= if week == "" do %>
-                <div class="empty h-[36px] min-h-[36px]"></div>
-              <% else %>
-                <div class="flex items-center justify-center select-none h-[36px] min-h-[36px]">
-                  <.typography
-                    variant="c1"
-                    class={"week-number flex w-6 h-6 items-center justify-center block select-none "
-                  <> get_class_week_element(week, @start_date, @end_date)
-                  }
-                  >
-                    <%= week %>
-                  </.typography>
-                </div>
-              <% end %>
-            <% end %>
-          </div>
-        </div>
-        <div class="flex-1">
-          <div class="dayNames grid grid-cols-7 text-[#9CA3AF] bg-[#F9FAFB]">
-            <%= for name <- @day_names do %>
+        <div class="flex overflow-hidden rounded justify-between">
+          <div class="weeks">
+            <div class="week grid w-10 grid-cols-1 text-[#9CA3AF] bg-[#F9FAFB] border-r border-[#D1D5DB] h-[36px] min-h-[36px]">
               <.typography
                 variant="c1"
-                class="h-[36px] min-h-[36px] text-center py-[10px] block select-none leading-4"
+                class="text-[#9CA3AF] py-[10px] items-center text-center justify-center block select-none"
               >
-                <%= name %>
+                week
               </.typography>
-            <% end %>
-          </div>
-          <div class="days grid grid-cols-7">
-            <%= for day <- get_date_in_month(date) do %>
-              <%= if day == -1 do %>
-                <div class="empty pointer-events-none h-[36px] min-h-[36px] w-[32.6px] pointer color-[#374151] flex items-center justify-center rounded">
-                </div>
-              <% else %>
-                <div
-                  class={
-                    get_class_date_element(
-                      Date.new!(date.year, date.month, day),
-                      @start_date,
-                      @end_date
-                    )
-                  }
-                  style="cursor:pointer"
-                  phx-target={@myself}
-                  phx-click="select_date"
-                  phx-value-day={day}
-                  phx-value-month={date.month}
-                  phx-value-year={date.year}
-                >
-                  <.typography variant="b1" class="pointer">
-                    <%= day %>
-                  </.typography>
-                </div>
+            </div>
+            <div class="week grid w-10 grid-cols-1 text-[#9CA3AF] bg-[#F9FAFB] border-r border-[#D1D5DB]">
+              <%= for week <- get_weeks_in_month(date) do %>
+                <%= if week == "" do %>
+                  <div class="empty h-[36px] min-h-[36px]"></div>
+                <% else %>
+                  <div class="flex items-center justify-center select-none h-[36px] min-h-[36px]">
+                    <.typography
+                      variant="c1"
+                      class={"week-number flex w-6 h-6 items-center justify-center block select-none "
+                    <> get_class_week_element(week, @start_date, @end_date)
+                    }
+                    >
+                      <%= week %>
+                    </.typography>
+                  </div>
+                <% end %>
               <% end %>
-            <% end %>
+            </div>
+          </div>
+          <div class="flex-1">
+            <div class="dayNames grid grid-cols-7 text-[#9CA3AF] bg-[#F9FAFB]">
+              <%= for name <- @day_names do %>
+                <.typography
+                  variant="c1"
+                  class="h-[36px] min-h-[36px] text-center py-[10px] block select-none leading-4"
+                >
+                  <%= name %>
+                </.typography>
+              <% end %>
+            </div>
+            <div class="days grid grid-cols-7">
+              <%= for day <- get_date_in_month(date) do %>
+                <%= if day == -1 do %>
+                  <div class="empty pointer-events-none h-[36px] min-h-[36px] w-[32.6px] pointer color-[#374151] flex items-center justify-center rounded">
+                  </div>
+                <% else %>
+                  <div
+                    class={
+                      get_class_date_element(
+                        Date.new!(date.year, date.month, day),
+                        @start_date,
+                        @end_date
+                      )
+                    }
+                    style="cursor:pointer"
+                    phx-target={@myself}
+                    phx-click="select_date"
+                    phx-value-day={day}
+                    phx-value-month={date.month}
+                    phx-value-year={date.year}
+                  >
+                    <.typography variant="b1" class="pointer">
+                      <%= day %>
+                    </.typography>
+                  </div>
+                <% end %>
+              <% end %>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    """
+      """
+    end
   end
 
   def get_class_date_element(date, start_date, end_date) do

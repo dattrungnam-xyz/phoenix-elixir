@@ -10,6 +10,7 @@ defmodule SlaxWeb.DatesDateRangePickerLive do
         placeholder="Choose date"
         helpertext="aaaa"
         id="iii"
+        month_count="2"
 
 
       />
